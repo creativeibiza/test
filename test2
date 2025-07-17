@@ -1,0 +1,114 @@
+blueprint:
+  name: Luftentfeuchter Automatik mit Tageslimit
+  description: >
+    Schaltet den Entfeuchter an, wenn die Luftfeuchtigkeit über einen Grenzwert steigt 
+    und aus, wenn sie wieder sinkt. Begrenzung auf maximale Laufzeit pro Tag (in Minuten).
+  domain: automation
+  input:
+    humidity_sensor:
+      name: Luftfeuchtigkeit Sensor
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+    entfeuchter_switch:
+      name: Entfeuchter (Shelly o.ä.)
+      selector:
+        entity:
+          domain: switch
+    einschalt_schwelle:
+      name: Einschalt-Schwelle (%)
+      default: 70
+      selector:
+        number:
+          min: 50
+          max: 90
+          unit_of_measurement: "%"
+    ausschalt_schwelle:
+      name: Ausschalt-Schwelle (%)
+      default: 68
+      selector:
+        number:
+          min: 40
+          max: 85
+          unit_of_measurement: "%"
+    laufzeit_variable:
+      name: Input Number für Laufzeit (min)
+      selector:
+        entity:
+          domain: input_number
+    max_laufzeit:
+      name: Maximale Laufzeit pro Tag (min)
+      default: 240
+      selector:
+        number:
+          min: 30
+          max: 1440
+          unit_of_measurement: "min"
+
+mode: queued
+trigger:
+  - platform: numeric_state
+    entity_id: !input humidity_sensor
+    above: !input einschalt_schwelle
+    id: feucht_hoch
+  - platform: numeric_state
+    entity_id: !input humidity_sensor
+    below: !input ausschalt_schwelle
+    id: feucht_niedrig
+  - platform: time_pattern
+    minutes: "/5"
+    id: alle_5_min
+  - platform: time
+    at: "00:00:00"
+    id: mitternacht
+
+condition: []
+
+action:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'mitternacht' }}"
+        sequence:
+          - service: input_number.set_value
+            data:
+              value: 0
+            target:
+              entity_id: !input laufzeit_variable
+
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'feucht_niedrig' }}"
+        sequence:
+          - service: switch.turn_off
+            target:
+              entity_id: !input entfeuchter_switch
+
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'feucht_hoch' }}"
+          - condition: numeric_state
+            entity_id: !input laufzeit_variable
+            below: !input max_laufzeit
+        sequence:
+          - service: switch.turn_on
+            target:
+              entity_id: !input entfeuchter_switch
+
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'alle_5_min' }}"
+          - condition: state
+            entity_id: !input entfeuchter_switch
+            state: "on"
+          - condition: numeric_state
+            entity_id: !input laufzeit_variable
+            below: !input max_laufzeit
+        sequence:
+          - service: input_number.set_value
+            data:
+              value: >
+                {{ [ (states(inputs.laufzeit_variable) | float + 5), (inputs.max_laufzeit | float) ] | min }}
+            target:
+              entity_id: !input laufzeit_variable

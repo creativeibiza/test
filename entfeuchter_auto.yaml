@@ -51,21 +51,25 @@ trigger:
   - platform: numeric_state
     entity_id: !input humidity_sensor
     above: !input einschalt_schwelle
+    id: feucht_hoch
   - platform: numeric_state
     entity_id: !input humidity_sensor
     below: !input ausschalt_schwelle
+    id: feucht_niedrig
   - platform: time_pattern
     minutes: "/5"
+    id: alle_5_min
   - platform: time
     at: "00:00:00"
+    id: mitternacht
 
 condition: []
 
 action:
   - choose:
       - conditions:
-          - condition: time
-            at: "00:00:00"
+          - condition: template
+            value_template: "{{ trigger.id == 'mitternacht' }}"
         sequence:
           - service: input_number.set_value
             data:
@@ -74,18 +78,16 @@ action:
               entity_id: !input laufzeit_variable
 
       - conditions:
-          - condition: numeric_state
-            entity_id: !input humidity_sensor
-            below: !input ausschalt_schwelle
+          - condition: template
+            value_template: "{{ trigger.id == 'feucht_niedrig' }}"
         sequence:
           - service: switch.turn_off
             target:
               entity_id: !input entfeuchter_switch
 
       - conditions:
-          - condition: numeric_state
-            entity_id: !input humidity_sensor
-            above: !input einschalt_schwelle
+          - condition: template
+            value_template: "{{ trigger.id == 'feucht_hoch' }}"
           - condition: numeric_state
             entity_id: !input laufzeit_variable
             below: !input max_laufzeit
@@ -95,8 +97,8 @@ action:
               entity_id: !input entfeuchter_switch
 
       - conditions:
-          - condition: time_pattern
-            minutes: "/5"
+          - condition: template
+            value_template: "{{ trigger.id == 'alle_5_min' }}"
           - condition: state
             entity_id: !input entfeuchter_switch
             state: "on"
@@ -107,6 +109,6 @@ action:
           - service: input_number.set_value
             data:
               value: >
-                {{ [ (states(!input.laufzeit_variable) | float) + 5, !input.max_laufzeit | float ] | min }}
+                {{ [ (states(inputs.laufzeit_variable) | float + 5), (inputs.max_laufzeit | float) ] | min }}
             target:
               entity_id: !input laufzeit_variable
